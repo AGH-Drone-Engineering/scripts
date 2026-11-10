@@ -1,4 +1,4 @@
-# 🛠️ scripts — Raspberry Pi & UAV Setup Scripts
+# scripts — Raspberry Pi & UAV Setup Scripts
 
 A collection of configuration, installation, and utility scripts for Linux systems (primarily **Raspberry Pi OS** / Debian).
 
