@@ -42,7 +42,7 @@ On both Pis:
 
 ```sh
 git clone <this-repo-url>
-cd IMAV-antenna-PCB/setup
+cd scripts/wfb-ng
 ```
 
 `link.conf`'s defaults (channel 165, 20 MHz, MCS1) install as-is. Change
@@ -119,7 +119,7 @@ first is the one that generates the pair.
 
 ```sh
 git clone <this-repo-url>
-cd IMAV-antenna-PCB/setup
+cd scripts/wfb-ng
 sudo ./install.sh --role gs
 ```
 
