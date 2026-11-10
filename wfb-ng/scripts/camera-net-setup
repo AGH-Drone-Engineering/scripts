@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# setup/scripts/camera-net-setup — configure static IP on the drone's ethernet
+# interface for the IP camera (e.g. SIYI or other RTSP camera).
+set -Eeuo pipefail
+
+IFACE="${1:-eth1}"
+IP_CIDR="${2:-192.168.144.40/24}"
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "ERROR: run as root (sudo ./scripts/camera-net-setup [iface] [ip/cidr])" >&2
+    exit 1
+fi
+
+echo "[+] Setting up $IFACE with static IP $IP_CIDR..."
+ip addr flush dev "$IFACE" 2>/dev/null || true
+ip link set "$IFACE" up
+ip addr add "$IP_CIDR" dev "$IFACE"
+
+# Also persist via NetworkManager if available
+if command -v nmcli >/dev/null 2>&1; then
+    nmcli con delete camera-net 2>/dev/null || true
+    nmcli con add type ethernet ifname "$IFACE" con-name camera-net \
+        ipv4.method manual ipv4.addresses "$IP_CIDR" connection.autoconnect yes >/dev/null 2>&1 || true
+    echo "[+] Saved persistent NetworkManager connection 'camera-net' (survives reboot)"
+fi
+
+echo "[+] Interface status:"
+ip -brief addr show dev "$IFACE"

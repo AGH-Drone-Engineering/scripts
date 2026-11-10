@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# setup/scripts/wfb-webrtc-install — install MediaMTX on the ground station
+# to bridge the RTSP stream (rtsp://127.0.0.1:8554/wfb) to WebRTC for low-latency
+# in-browser viewing at http://<gs-host>:8889/wfb.
+set -Eeuo pipefail
+
+MEDIAMTX_VERSION="v1.9.3"
+INSTALL_DIR="/usr/local/bin"
+CONF_DIR="/etc/mediamtx"
+CONF_FILE="$CONF_DIR/mediamtx.yml"
+SERVICE_FILE="/etc/systemd/system/mediamtx.service"
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "ERROR: run as root (sudo ./scripts/wfb-webrtc-install)" >&2
+    exit 1
+fi
+
+ARCH="$(dpkg --print-architecture 2>/dev/null || uname -m)"
+case "$ARCH" in
+    arm64|aarch64) MTX_ARCH="linux_arm64v8" ;;
+    amd64|x86_64)  MTX_ARCH="linux_amd64" ;;
+    *) echo "ERROR: Unsupported architecture '$ARCH' for MediaMTX binary." >&2; exit 1 ;;
+esac
+
+echo "[+] Installing MediaMTX $MEDIAMTX_VERSION for $MTX_ARCH..."
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+TARBALL_URL="https://github.com/bluenviron/mediamtx/releases/download/${MEDIAMTX_VERSION}/mediamtx_${MEDIAMTX_VERSION}_${MTX_ARCH}.tar.gz"
+echo "[+] Fetching $TARBALL_URL"
+curl -fsSL "$TARBALL_URL" -o "$TMP_DIR/mediamtx.tar.gz"
+tar -xzf "$TMP_DIR/mediamtx.tar.gz" -C "$TMP_DIR"
+
+install -m 0755 "$TMP_DIR/mediamtx" "$INSTALL_DIR/mediamtx"
+
+mkdir -p "$CONF_DIR"
+cat << 'EOF' > "$CONF_FILE"
+# MediaMTX configuration for WFB-ng WebRTC browser bridge
+logLevel: info
+logDestinations: [stdout]
+
+# Disable unused servers to prevent port conflicts with wfb-ng rtsp on :8554
+rtsp: no
+rtmp: no
+
+# HLS streaming (HTTP fallback)
+hls: yes
+hlsAddress: :8888
+
+# WebRTC streaming (ultra-low latency for browser FPV)
+webrtc: yes
+webrtcAddress: :8889
+
+paths:
+  wfb:
+    source: rtsp://127.0.0.1:8554/wfb
+    sourceOnDemand: no
+EOF
+chmod 0644 "$CONF_FILE"
+echo "[+] Wrote $CONF_FILE"
+
+cat << EOF > "$SERVICE_FILE"
+[Unit]
+Description=MediaMTX WebRTC Streamer for WFB-ng
+After=network.target rtsp@h264.service rtsp@h265.service
+
+[Service]
+Type=simple
+ExecStart=$INSTALL_DIR/mediamtx $CONF_FILE
+Restart=always
+RestartSec=2s
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+chmod 0644 "$SERVICE_FILE"
+echo "[+] Wrote $SERVICE_FILE"
+
+systemctl daemon-reload
+systemctl enable --now mediamtx.service
+
+echo "[+]"
+echo "[+] MediaMTX is active. You can view the live stream in any browser:"
+echo "[+]   WebRTC (ultra-low latency): http://<gs-ip>:8889/wfb"
+echo "[+]   HLS (HTTP player fallback): http://<gs-ip>:8888/wfb"

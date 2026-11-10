@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# setup/scripts/wfb-doctor — one-shot diagnostic dump covering driver,
+# services, tunnel, and video state. Runs without root; sbin-only tools
+# (dkms, ethtool) are located explicitly since a non-root, non-interactive
+# PATH typically excludes /usr/sbin.
+set -uo pipefail
+
+section() { printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
+
+# find_bin NAME — PATH lookup, falling back to /usr/sbin and /sbin.
+find_bin() {
+    command -v "$1" 2>/dev/null && return 0
+    for d in /usr/sbin /sbin; do
+        [ -x "$d/$1" ] && { echo "$d/$1"; return 0; }
+    done
+    return 1
+}
+
+section "USB enumeration (expect 0bda:a81a)"
+if command -v lsusb >/dev/null 2>&1; then
+    lsusb | grep -i '0bda' || echo "No Realtek (0bda:*) USB device found -- module not plugged in, or not powered."
+else
+    echo "lsusb not installed"
+fi
+
+section "Kernel driver binding"
+nic="$(wfb-nics 2>/dev/null | head -1)"
+if [ -n "$nic" ]; then
+    echo "wfb-nics reports: $nic"
+    if ethtool_bin="$(find_bin ethtool)"; then
+        "$ethtool_bin" -i "$nic" 2>/dev/null | grep -E 'driver|version' || echo "ethtool -i $nic failed"
+    else
+        echo "ethtool not found"
+    fi
+    ip -brief link show "$nic" 2>/dev/null
+else
+    echo "wfb-nics found no interface. Expected driver name: rtl88x2eu."
+    echo "Check: dmesg | grep -i 8812eu   and   dkms status"
+fi
+
+section "DKMS status"
+if dkms_bin="$(find_bin dkms)"; then
+    "$dkms_bin" status 2>/dev/null | grep -i 'rtl88x2eu\|realtek-rtl88x2eu' || echo "No matching DKMS module registered."
+else
+    echo "dkms not found"
+fi
+
+section "wfb-ng package"
+if command -v dpkg >/dev/null 2>&1; then
+    dpkg -l wfb-ng 2>/dev/null | tail -1
+    echo -n "wfb_tun present in package: "
+    dpkg -L wfb-ng 2>/dev/null | grep -q 'wfb_tun$' && echo "yes" || echo "NO -- tunnel/SSH will not work, see docs/troubleshooting.md"
+fi
+
+section "systemd services"
+for svc in wifibroadcast@drone wifibroadcast@gs; do
+    state="$(systemctl is-active "$svc" 2>/dev/null || true)"
+    echo "$svc: ${state:-not found}"
+done
+
+section "Tunnel interfaces (drone-wfb / gs-wfb)"
+ip -brief addr show 2>/dev/null | grep -E 'drone-wfb|gs-wfb' || echo "Neither tunnel interface is up."
+
+section "Video"
+if [ -f /usr/local/bin/wfb-video-air ]; then
+    echo "Generated pipeline script: present (/usr/local/bin/wfb-video-air)"
+else
+    echo "Generated pipeline script: not present (VIDEO_ENABLE=0, or 90-video hasn't run on the air role)"
+fi
+air_state="$(systemctl is-active wfb-video-air.service 2>/dev/null || true)"
+echo "wfb-video-air.service: ${air_state:-not found}"
+for codec in h264 h265; do
+    state="$(systemctl is-active "rtsp@${codec}.service" 2>/dev/null || true)"
+    [ -n "$state" ] && echo "rtsp@${codec}.service: $state"
+done
+
+section "Stream stats (live API)"
+profile=""
+systemctl is-active --quiet wifibroadcast@drone 2>/dev/null && profile=drone
+systemctl is-active --quiet wifibroadcast@gs 2>/dev/null && profile=gs
+if [ -z "$profile" ]; then
+    echo "wifibroadcast@drone/@gs not active -- no API to query."
+elif ! command -v python3 >/dev/null 2>&1; then
+    echo "python3 not found -- can't query the stats API. Use: wfb-cli $profile"
+else
+    port=8102
+    [ "$profile" = gs ] && port=8103
+    timeout 5 python3 -u - "$port" <<'PYEOF'
+import json, socket, sys, time
+
+port = int(sys.argv[1])
+rows = {}
+deadline = time.monotonic() + 2.5
+try:
+    s = socket.create_connection(("127.0.0.1", port), timeout=1)
+    buf = b""
+    while time.monotonic() < deadline:
+        s.settimeout(max(0.1, deadline - time.monotonic()))
+        try:
+            chunk = s.recv(4096)
+        except socket.timeout:
+            break
+        if not chunk:
+            break
+        buf += chunk
+        while b"\n" in buf:
+            line, buf = buf.split(b"\n", 1)
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            if d.get("type") in ("tx", "rx"):
+                rows[d["id"]] = d
+except OSError:
+    pass
+
+if not rows:
+    print("no stats frames received on port %d" % port)
+else:
+    for sid in sorted(rows):
+        d = rows[sid]
+        p = d.get("packets", {})
+        if d["type"] == "tx":
+            print("  %-12s incoming=%-6d injected=%-6d dropped=%d" % (
+                sid, p.get("incoming", [0])[0], p.get("injected", [0])[0], p.get("dropped", [0])[0]))
+        else:
+            print("  %-12s all=%-6d dec_err=%-4d lost=%-4d fec_rec=%d" % (
+                sid, p.get("all", [0])[0], p.get("dec_err", [0])[0], p.get("lost", [0])[0], p.get("fec_rec", [0])[0]))
+print("(counts are per the last ~1s interval; non-zero 'dec_err' on any stream means mismatched keys)")
+PYEOF
+fi
+
+section "Link config fingerprint"
+if [ -f /etc/wifibroadcast.cfg ]; then
+    echo "sha256 of /etc/wifibroadcast.cfg: $(sha256sum /etc/wifibroadcast.cfg | cut -c1-16)"
+    echo "(compare the radio-section fingerprint printed by install.sh on both ends instead --"
+    echo " this one includes role-specific values too, so it will differ between air and gs.)"
+else
+    echo "/etc/wifibroadcast.cfg not found -- run install.sh first."
+fi
+
+section "Next steps"
+echo "Live stats: wfb-cli drone   (or: wfb-cli gs)"
+echo "Full logs:  journalctl -u wifibroadcast@drone -e --no-pager   (or @gs)"
+echo "See docs/troubleshooting.md for symptom -> cause -> command."

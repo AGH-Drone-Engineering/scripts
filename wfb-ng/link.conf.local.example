@@ -1,0 +1,37 @@
+# ============================================================================
+# setup/link.conf.local.example
+#
+# Optional host-specific override overlay.
+# Copy to setup/link.conf.local (which is gitignored) ONLY if you need to
+# override default settings from link.conf on this specific machine.
+#
+# Production defaults are already set in link.conf:
+#   POWER_SOURCE=external   (full field power)
+#   WIFI_TXPOWER=1500       (15 dBm)
+#   QGC_HOST=listen         (GS listens on 0.0.0.0:14550 for QGC connections)
+#
+# Uncomment and adjust below only what you want to override.
+#
+# After editing:
+#   sudo ./install.sh --role air|gs --only 50-config
+#   sudo systemctl restart wifibroadcast@drone   # or wifibroadcast@gs
+# ============================================================================
+
+# --- Bench work / Low-power testing (either host) ----------------------------
+# Use this when powering the radio module directly from the Raspberry Pi USB port
+# without external power / BEC. Caps power to avoid brownouts.
+# POWER_SOURCE=usb-pi
+# WIFI_TXPOWER=500
+
+# --- MAVLink custom routing (GS only) ----------------------------------------
+# By default, GS listens on 0.0.0.0:14550 (QGC_HOST=listen).
+# If you want GS to push UDP telemetry directly to a fixed laptop IP instead:
+# QGC_HOST=192.168.1.50
+# Or for QGC running locally on the Pi itself:
+# QGC_HOST=127.0.0.1
+
+# --- Air unit custom serial port (Air only) ----------------------------------
+# If your flight controller telemetry is on a USB-serial adapter instead of UART:
+# MAVLINK_SERIAL=/dev/ttyUSB0
+
+
