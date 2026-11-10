@@ -35,8 +35,8 @@ Prevents Wi-Fi power-save disconnects and automatically restarts the interface i
 # Configure all existing Wi-Fi profiles:
 sudo ./wifi.sh
 
-# Or configure a specific profile:
-sudo ./wifi.sh "YourSSID"
+# Or configure a specific profile (find the name via `nmcli connection show`):
+sudo ./wifi.sh "NAME"
 ```
 
 ### How it works:
