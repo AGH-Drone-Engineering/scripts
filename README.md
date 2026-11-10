@@ -10,12 +10,13 @@ A collection of configuration, installation, and utility scripts for Linux syste
 |---|---|---|---|
 | **[wifi-fix](wifi-fix/)** | Fixes Raspberry Pi headless access issues. Provides an instant direct Ethernet cable connection (`10.42.0.1` / mDNS) and prevents Wi-Fi sleep/dropouts. | NetworkManager, systemd timers, RFKill, iw | [wifi-fix/README.md](wifi-fix/README.md) |
 | **[wfb-ng](wfb-ng/)** | Installer and tooling for a long-range bidirectional digital radio link (air ↔ ground station). Carries MAVLink, SSH tunnel, and RTSP/WebRTC video. | WFB-ng, RTL8812EU (raw 802.11 monitor injection), WebRTC, MAVLink | [wfb-ng/README.md](wfb-ng/README.md) |
+| **[ssh-setup](ssh-setup/)** | Configures SSH key authentication and host aliases (`~/.ssh/config`) from your PC to a Raspberry Pi. Works on Windows and Linux. | OpenSSH, Ed25519, `ssh-copy-id`, `~/.ssh/config` | [ssh-setup/README.md](ssh-setup/README.md) |
 
 ---
 
 ## Quickstart
 
-### 1. Clone the repository on your Raspberry Pi
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/AGH-Drone-Engineering/scripts.git
@@ -23,6 +24,21 @@ cd scripts
 ```
 
 ### 2. Choose your module
+
+- **SSH Key & Client Alias Setup (Run on your computer / laptop):**
+  Sets up an Ed25519 key, deploys it to the Raspberry Pi, and configures an alias in `~/.ssh/config` for passwordless.
+
+  Paste the script block directly into your local terminal:
+  - **Windows:** Copy & paste block into PowerShell → [ssh-setup/setup.ps1](ssh-setup/setup.ps1)
+  - **Linux:** Copy & paste block into Bash → [ssh-setup/setup.sh](ssh-setup/setup.sh)
+
+  Or run from the cloned repository:
+  ```bash
+  cd ssh-setup
+  bash setup.sh       # Linux
+  .\setup.ps1         # Windows (PowerShell)
+  ```
+  *(Details, mDNS alias notes & copy-paste blocks: [ssh-setup/README.md](ssh-setup/README.md))*
 
 - **Network configuration (Direct laptop cable access or reliable Wi-Fi):**
   ```bash
